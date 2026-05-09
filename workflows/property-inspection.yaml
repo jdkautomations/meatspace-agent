@@ -1,0 +1,145 @@
+# Property Inspection Workflow
+# Defines the step-by-step orchestration for exterior property condition verification
+
+name: property_inspection
+version: "1.0.0"
+description: Exterior property condition verification workflow for real estate clients
+
+# ─── Trigger ────────────────────────────────────────────────────────────────
+trigger:
+  mcp_tool: create_property_inspection
+  required_inputs:
+    - address
+    - client_name
+    - due_date
+
+# ─── Steps ──────────────────────────────────────────────────────────────────
+steps:
+  - id: safety_check
+    name: Run Safety Gate
+    module: src/agent/safety
+    function: runSafetyCheck
+    on_fail: reject_task
+    required: true
+
+  - id: plan_task
+    name: Generate Task Plan
+    module: src/agent/planner
+    function: planTask
+    depends_on: [safety_check]
+    required: true
+
+  - id: hold_escrow
+    name: Hold Payment in Escrow
+    module: src/payments/escrow
+    function: holdEscrow
+    depends_on: [safety_check]
+    required: true
+    params:
+      amount: "{{ inputs.budget_usd | default(75) }}"
+
+  - id: search_workers
+    name: Search for Available Workers
+    module: src/integrations/rentahuman
+    function: searchHumans
+    depends_on: [plan_task]
+    required: true
+    params:
+      skills: ["photography", "local_knowledge"]
+      location: "{{ inputs.address }}"
+      maxHourlyRate: 50
+
+  - id: create_bounty
+    name: Post Task to RentAHuman.ai
+    module: src/integrations/rentahuman
+    function: createBounty
+    depends_on: [search_workers, hold_escrow]
+    required: true
+
+  - id: await_applications
+    name: Wait for Worker Applications
+    module: src/integrations/rentahuman
+    function: getBountyApplications
+    depends_on: [create_bounty]
+    timeout_minutes: 60
+    poll_interval_seconds: 30
+    required: true
+
+  - id: accept_best_applicant
+    name: Accept Best Worker
+    module: src/integrations/rentahuman
+    function: acceptApplication
+    depends_on: [await_applications]
+    selection_criteria:
+      - field: worker.rating
+        order: desc
+      - field: worker.hourlyRate
+        order: asc
+    required: true
+
+  - id: collect_evidence
+    name: Wait for Evidence Submission
+    module: src/evidence/collector
+    function: pollUntilComplete
+    depends_on: [accept_best_applicant]
+    timeout_minutes: 120
+    required_evidence:
+      - front_photo
+      - back_photo
+      - left_side_photo
+      - right_side_photo
+      - front_yard_photo
+      - back_yard_photo
+      - mailbox_photo
+      - arrival_geotag
+
+  - id: validate_evidence
+    name: Validate Submitted Evidence
+    module: src/evidence/validator
+    function: validateEvidence
+    depends_on: [collect_evidence]
+    pass_threshold_score: 85
+    required: true
+
+  - id: notify_client
+    name: Send Completion Notification
+    action: notify
+    depends_on: [validate_evidence]
+    message: "Property inspection complete for {{ inputs.address }}. Evidence validated (score: {{ steps.validate_evidence.score }}/100). Review and approve payment."
+
+  - id: await_approval
+    name: Await Client Payment Approval
+    action: human_approval
+    depends_on: [notify_client]
+    timeout_hours: 48
+    auto_approve_on_timeout: false
+
+  - id: release_escrow
+    name: Release Payment to Worker
+    module: src/payments/escrow
+    function: releaseEscrow
+    depends_on: [await_approval]
+    condition: "{{ steps.await_approval.approved == true }}"
+
+  - id: dispute_if_rejected
+    name: Dispute Escrow if Rejected
+    module: src/payments/escrow
+    function: disputeEscrow
+    depends_on: [await_approval]
+    condition: "{{ steps.await_approval.approved == false }}"
+
+# ─── Error Handling ──────────────────────────────────────────────────────────
+on_error:
+  - action: refund_escrow
+    trigger: any_step_fails
+  - action: notify_admin
+    trigger: evidence_validation_fails
+
+# ─── Success Output ──────────────────────────────────────────────────────────
+output:
+  task_id: "{{ task.id }}"
+  status: "{{ task.status }}"
+  address: "{{ inputs.address }}"
+  evidence_score: "{{ steps.validate_evidence.score }}"
+  worker_id: "{{ task.assignedWorkerId }}"
+  completed_at: "{{ steps.collect_evidence.completedAt }}"
