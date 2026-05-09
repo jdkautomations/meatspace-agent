@@ -1,0 +1,108 @@
+# meatspace-agent Task Policy
+# Version: 1.0.0
+# Governs what tasks the agent is permitted to post to RentAHuman.ai
+
+version: "1.0.0"
+updated: "2025-07-01"
+
+# ─── Budget Limits ──────────────────────────────────────────────────────────
+budget:
+  max_per_task_usd: 200
+  daily_cap_usd: 500
+  require_approval_above_usd: 150
+
+# ─── Duration Limits ────────────────────────────────────────────────────────
+duration:
+  max_hours_per_task: 8
+  warn_above_hours: 4
+
+# ─── Allowed Task Categories ────────────────────────────────────────────────
+allowed_categories:
+  - property_inspection     # Exterior condition verification
+  - errand                  # Local errands (pickup, dropoff, purchasing)
+  - delivery                # Item delivery between locations
+  - data_collection         # Public-space data collection (no private areas)
+  - signage_check           # Verify signage, business hours, storefronts
+
+# ─── Prohibited Task Categories ─────────────────────────────────────────────
+prohibited_categories:
+  - interior_access         # Any task requiring entry to private property
+  - surveillance            # Monitoring or tracking individuals
+  - legal_services          # Legal advice or representation
+  - medical_services        # Medical advice, diagnosis, or treatment
+  - financial_services      # Investment advice or financial transactions
+  - adult_content           # Any adult or explicit content
+  - emergency_response      # 911-type emergency tasks
+  - childcare               # Care of minors
+
+# ─── Prohibited Keywords ────────────────────────────────────────────────────
+prohibited_keywords:
+  - trespass
+  - break in
+  - enter without permission
+  - surveillance
+  - spy
+  - stalk
+  - minor
+  - child
+  - underage
+  - medical advice
+  - prescribe
+  - diagnose
+  - weapon
+  - firearm
+  - explosive
+  - adult content
+  - sexual
+  - fraud
+  - impersonate
+  - deceive
+  - emergency
+  - "911"
+
+# ─── Location Policy ────────────────────────────────────────────────────────
+location:
+  service_area: "Sacramento, CA 95815 and surrounding zip codes"
+  require_valid_address: true
+  min_address_length: 10
+
+# ─── Evidence Requirements ──────────────────────────────────────────────────
+evidence:
+  property_inspection:
+    required_photos:
+      - front_photo
+      - back_photo
+      - left_side_photo
+      - right_side_photo
+      - front_yard_photo
+      - back_yard_photo
+      - mailbox_photo
+    require_geotag: true
+    require_condition_form: true
+    exterior_only: true  # CRITICAL: no interior access permitted
+  errand:
+    require_completion_photo: true
+  delivery:
+    require_pickup_photo: true
+    require_delivery_photo: true
+
+# ─── Worker Requirements ────────────────────────────────────────────────────
+workers:
+  min_rating: 3.5
+  max_hourly_rate_usd: 75
+  require_verified_identity: true
+  auto_accept_rating_above: 4.5
+
+# ─── Payment Policy ─────────────────────────────────────────────────────────
+payments:
+  hold_on_assignment: true
+  auto_release: false        # Always require human approval before releasing
+  release_on_evidence_score_above: 90  # score 0-100
+  dispute_window_hours: 48
+
+# ─── Audit Policy ───────────────────────────────────────────────────────────
+audit:
+  log_all_events: true
+  retain_days: 90
+  alert_on_rejection: true
+  alert_on_dispute: true
